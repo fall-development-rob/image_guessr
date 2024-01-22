@@ -33,3 +33,7 @@ The application will then be available at http://localhost:3000 and the API at h
 Swagger docs for the API can be found at: http://localhost:8000/docs
 
 To keep things simple for the task, `pnpm dev` starts both the Next application **and** the Python API (with hot reloading). You're welcome to add docker to the project and run them as two containers, if you'd prefer.
+
+## Refactor
+
+Removed the python code into a seperate repo, to abide by seperation of concern and to keep it more manageable. 
