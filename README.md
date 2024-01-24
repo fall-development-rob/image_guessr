@@ -36,4 +36,5 @@ To keep things simple for the task, `pnpm dev` starts both the Next application 
 
 ## Refactor
 
-Removed the python code into a seperate repo, to abide by seperation of concern and to keep it more manageable. 
+- Removed the python code into a seperate repo, to abide by seperation of concern and to keep it more manageable. 
+- Removed pnpm in favor of NPM due to the packages already being version locked and there being no needed for the added complexity of pnpm.

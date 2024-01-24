@@ -5,10 +5,9 @@ import Image from "next/image";
 import React, { useState, useEffect } from "react";
 import { BarLoader } from "react-spinners";
 import { usePathname, useSearchParams } from "next/navigation";
-import ImageForm from "./ImageForm";
+import ImageForm from "@/components/form/ImageForm";
+import { postImageGeneration, fetchImageResult } from "../api/ImageHandler";
 
-// Requires logic for changing role!
-// const role = "controller";
 const subjectOptions = [
   { title: "duck", value: "duck" },
   { title: "dog", value: "dog" },
@@ -35,13 +34,10 @@ export default function Game() {
   const [location, setLocation] = useState<string>("the sky");
   const [imageResult, setImageResult] = useState<ImageResult | null>();
   const [error, setError] = useState<string | null>();
-  // const [image, setImage] = useState<string | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [role, setRole] = useState<string>("");
   const [prompt, setPrompt] = useState<string>("");
   const [guess, setGuess] = useState<boolean>(false);
-
-  // const gameID = 12345
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -50,10 +46,8 @@ export default function Game() {
   if (pathname === "/game") {
     gameID = searchParams.get("id");
   }
-  //  const { id } = router.query;
 
   useEffect(() => {
-    // const gameID = '12345';
     const socket = new WebSocket(`ws://localhost:8000/game/ws2?id=${gameID}`);
     setWs(socket);
 
@@ -66,23 +60,17 @@ export default function Game() {
 
         switch (data.type) {
           case "image_generation":
-            // handleMessageType1(data.data);
-            console.log(data.prompt);
             setImageResult(data.img);
             setPrompt(data.prompt);
             break;
           case "role_allocation":
-            console.log("role_allocation", data.role);
             setRole(data.role);
-            console.log(role);
-            // handleMessageType2(message.data);
+
             break;
           // Handle other message types
           default:
-            console.log("Unknown message type:", message.type);
+            setError("Unknown message type");
         }
-
-        console.log(data);
       } catch (error) {
         console.error("Error in parsing data:", error);
       }
@@ -93,48 +81,25 @@ export default function Game() {
     };
   }, []);
 
-  const postImageGeneration = async (prompt: string): Promise<ImageResult> => {
-    const response = await fetch("/api/images/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status}`);
-    }
-
-    return await response.json();
-  };
-
-  const fetchImageResult = async (id: string): Promise<ImageResult> => {
-    const response = await fetch(`/api/images/result/${id}`);
-    if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status}`);
-    }
-    return await response.json();
-  };
-
   const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault();
 
     let guessPrompt = `A photo of a ${subject} in ${location}`;
 
-    console.log(guessPrompt)
     if (guessPrompt === prompt) {
       setGuess(true);
     }
-
-    console.log(guessPrompt, guess)
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    setPrompt(`A photo of a ${subject} in ${location}`);
+    let imagePrompt = `A photo of a ${subject} in ${location}`;
+
+    setPrompt(imagePrompt);
 
     try {
-      let result = await postImageGeneration(prompt);
+      let result = await postImageGeneration(imagePrompt);
 
       setImageResult(result);
 
@@ -155,17 +120,16 @@ export default function Game() {
   };
 
   const sendImage = (result) => {
-    console.log(prompt)
+    console.log(prompt);
     try {
       ws?.send(
         JSON.stringify({
           type: "image_generation",
           status: result.status,
           img: result,
-          prompt: prompt
+          prompt: prompt,
         })
       );
-      // setImageResult({ id: "", status: "waiting" });
     } catch (error) {
       setError(`An error occurred.`);
       console.error("Error in sending data:", error);
@@ -184,13 +148,20 @@ export default function Game() {
         </div>
       )}
 
-      {guess && (<> {guess == true ? (
-        <div className="flex flex-none h-fit mx-auto uppercase">
-          <div className="mb-4 text-green-400 uppercase">SMASHED IT!!!!</div>
-        </div>) : (<div className="flex flex-none h-fit mx-auto uppercase">
-          <div className="mb-4 text-red-400 uppercase">Try Again</div>
-        </div>)}
-        </>)}
+      {guess && (
+        <>
+          {" "}
+          {guess == true ? (
+            <div className="flex flex-none h-fit mx-auto uppercase">
+              <div className="mb-4 text-green-400 uppercase">
+                SMASHED IT!!!!
+              </div>
+            </div>
+          ) : (
+            ""
+          )}
+        </>
+      )}
       <div className="flex flex-1">
         <div className="flex mx-auto border border-white rounded border-opacity-50 aspect-square w-[80vw] max-w-[50vh]">
           {imageResult && (
@@ -229,7 +200,9 @@ export default function Game() {
         location={location}
         onSubjectChange={setSubject}
         onLocationChange={setLocation}
-        onSubmit={role && (role === "guesser" ? handleSubmitGuess : handleSubmit)}
+        onSubmit={
+          role && (role === "guesser" ? handleSubmitGuess : handleSubmit)
+        }
         subjectOptions={subjectOptions}
         locationOptions={locationOptions}
         disabled={
