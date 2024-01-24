@@ -2,11 +2,12 @@
 
 import SelectBlock from "@/components/form/select";
 import Image from "next/image";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BarLoader } from "react-spinners";
+import { usePathname, useSearchParams } from "next/navigation";
+import ImageForm from "@/components/form/ImageForm";
+import { postImageGeneration, fetchImageResult } from "../api/ImageHandler";
 
-// Requires logic for changing role!
-const role = "controller";
 const subjectOptions = [
   { title: "duck", value: "duck" },
   { title: "dog", value: "dog" },
@@ -33,40 +34,105 @@ export default function Game() {
   const [location, setLocation] = useState<string>("the sky");
   const [imageResult, setImageResult] = useState<ImageResult | null>();
   const [error, setError] = useState<string | null>();
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [role, setRole] = useState<string>("");
+  const [prompt, setPrompt] = useState<string>("");
+  const [guess, setGuess] = useState<boolean>(false);
+
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  let gameID = null;
+
+  if (pathname === "/game") {
+    gameID = searchParams.get("id");
+  }
+
+  useEffect(() => {
+    const socket = new WebSocket(`ws://localhost:8000/game/ws2?id=${gameID}`);
+    setWs(socket);
+
+    socket.onmessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.status === "failed") {
+          setError(`An error occurred.`);
+        }
+
+        switch (data.type) {
+          case "image_generation":
+            setImageResult(data.img);
+            setPrompt(data.prompt);
+            break;
+          case "role_allocation":
+            setRole(data.role);
+
+            break;
+          // Handle other message types
+          default:
+            setError("Unknown message type");
+        }
+      } catch (error) {
+        console.error("Error in parsing data:", error);
+      }
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, []);
+
+  const handleSubmitGuess = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    let guessPrompt = `A photo of a ${subject} in ${location}`;
+
+    if (guessPrompt === prompt) {
+      setGuess(true);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    setImageResult({ id: "", status: "waiting" });
+    let imagePrompt = `A photo of a ${subject} in ${location}`;
 
-    const response = await fetch("/api/images/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: `A photo of a ${subject} in ${location}`,
-      }),
-    });
+    setPrompt(imagePrompt);
 
-    let result = await response.json();
+    try {
+      let result = await postImageGeneration(imagePrompt);
 
-    if (response.status !== 200) {
-      setError(`An error occurred.`);
-      return;
-    }
-
-    setImageResult(result);
-
-    while (result.status !== "completed" && result.status !== "failed") {
-      await sleep(6000);
-      const response = await fetch("/api/images/result/" + result.id);
-      result = await response.json();
-      if (response.status !== 200) {
-        setError(`An error occurred.`);
-        return;
-      }
       setImageResult(result);
+
+      while (result.status !== "completed" && result.status !== "failed") {
+        await sleep(6000);
+        result = await fetchImageResult(result.id);
+        setImageResult(result);
+        sendImage(result);
+
+        console.log(result);
+      }
+
+      sendImage(result);
+    } catch (error) {
+      setError("An error occurred. Please try again.");
+      console.error("Error:", error);
+    }
+  };
+
+  const sendImage = (result) => {
+    console.log(prompt);
+    try {
+      ws?.send(
+        JSON.stringify({
+          type: "image_generation",
+          status: result.status,
+          img: result,
+          prompt: prompt,
+        })
+      );
+    } catch (error) {
+      setError(`An error occurred.`);
+      console.error("Error in sending data:", error);
     }
   };
 
@@ -80,6 +146,21 @@ export default function Game() {
         <div className="flex flex-none h-fit mx-auto uppercase">
           <div className="mb-4 text-red-400 uppercase">{error}</div>
         </div>
+      )}
+
+      {guess && (
+        <>
+          {" "}
+          {guess == true ? (
+            <div className="flex flex-none h-fit mx-auto uppercase">
+              <div className="mb-4 text-green-400 uppercase">
+                SMASHED IT!!!!
+              </div>
+            </div>
+          ) : (
+            ""
+          )}
+        </>
       )}
       <div className="flex flex-1">
         <div className="flex mx-auto border border-white rounded border-opacity-50 aspect-square w-[80vw] max-w-[50vh]">
@@ -114,40 +195,23 @@ export default function Game() {
           )}
         </div>
       </div>
-      <form
-        className="flex flex-none flex-row text-sm uppercase mx-auto h-fit p-8"
-        onSubmit={handleSubmit}
-      >
-        <div className="my-auto">A photo of a</div>
-        <div className="my-auto">
-          <SelectBlock
-            items={subjectOptions}
-            label="Subject"
-            onChange={setSubject}
-          />
-        </div>
-        <div className="my-auto">in</div>
-        <div className="my-auto">
-          <SelectBlock
-            items={locationOptions}
-            label="Location"
-            onChange={setLocation}
-          />
-        </div>
-        <div>
-          <button
-            className="bg-white border border-white text-black h-full px-6 text-sm rounded hover:bg-opacity-0 hover:text-white disabled:opacity-10 disabled:hover:bg-white disabled:hover:text-black"
-            type="submit"
-            disabled={
-              imageResult != null &&
-              (imageResult.status == "processing" ||
-                imageResult.status == "waiting")
-            }
-          >
-            Generate
-          </button>
-        </div>
-      </form>
+      <ImageForm
+        subject={subject}
+        location={location}
+        onSubjectChange={setSubject}
+        onLocationChange={setLocation}
+        onSubmit={
+          role && (role === "guesser" ? handleSubmitGuess : handleSubmit)
+        }
+        subjectOptions={subjectOptions}
+        locationOptions={locationOptions}
+        disabled={
+          imageResult != null &&
+          (imageResult.status == "processing" ||
+            imageResult.status == "waiting")
+        }
+        buttonText={role && (role === "guesser" ? "Guess" : "Generate")}
+      />
     </div>
   );
 }
